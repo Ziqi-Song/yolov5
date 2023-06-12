@@ -204,7 +204,7 @@ class ComputeLoss:
         # na = 3, nt = 28
         na, nt = self.na, targets.shape[0]  # number of anchors, targets
         tcls, tbox, indices, anch = [], [], [], []
-        # gain,shape = [7]
+        # gain.shape = [7]
         gain = torch.ones(7, device=self.device)  # normalized to gridspace gain
         # ai用来标记下每个target属于哪个anchor，ai.shape = (na, nt), 第一行nt个0，第二行nt个1，...第na-1行nt个na-1 
         ai = torch.arange(na, device=self.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
@@ -243,10 +243,17 @@ class ComputeLoss:
                 # 计算每个gt_box与当前层的三个anchor的宽高比(gt_w/anchor_w  gt_h/anchor_h)
                 # r.shape = [3, 28, 2], r表示第i个(共3个)anchor与第j个(共28个)gt_box的宽高比(2)
                 r = t[..., 4:6] / anchors[:, None]  # wh ratio
-                # torch.max(r, 1 / r): r和1/r分别代表gt/anchor和anchor/gt，也就是无论gt和anchor谁比较大
-                # 只要超过了阈值，就会被去掉
+                print(f"r.shape = {r.shape}")
+                # torch.max(r, 1 / r): r和1/r分别代表gt/anchor和anchor/gt，意思是，无论gt和anchor谁比较大
+                # 只要超过了阈值，gt就会被标记为负样本（尺度差别太大导致超出了这一层anchor的检测能力）
+                # j.shape = [3, 28]
                 j = torch.max(r, 1 / r).max(2)[0] < self.hyp['anchor_t']  # compare
+                # yolov3 v4的筛选方法: wh_iou  GT与anchor的wh_iou超过一定的阈值就是正样本
                 # j = wh_iou(anchors, t[:, 4:6]) > model.hyp['iou_t']  # iou(3,n)=wh_iou(anchors(3,2), gwh(n,2))
+                
+                # 根据筛选条件j, 过滤负样本, 得到所有gt的anchor正样本
+                # 知道当前gt的坐标, gt属于哪张图片, anchor对应的idx, 也就得到了当前gt的正样本anchor
+                # t.shape = [num_positive, 7], num_positive是j里面True的总数
                 t = t[j]  # filter
 
                 # Offsets
