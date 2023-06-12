@@ -235,10 +235,16 @@ class ComputeLoss:
             gain[2:6] = torch.tensor(shape)[[3, 2, 3, 2]]  # xyxy gain
 
             # Match targets to anchors
-            t = targets * gain  # scale the xywh in targets from [0, 1] to the scale of each feature map
-            if nt:
+            # scale the xywh in targets from [0, 1] to the scale of each feature map
+            # t.shape = [na, nt, 7]
+            t = targets * gain
+            if nt:  # 如果有目标则开始匹配
                 # Matches
+                # 计算每个gt_box与当前层的三个anchor的宽高比(gt_w/anchor_w  gt_h/anchor_h)
+                # r.shape = [3, 28, 2], r表示第i个(共3个)anchor与第j个(共28个)gt_box的宽高比(2)
                 r = t[..., 4:6] / anchors[:, None]  # wh ratio
+                # torch.max(r, 1 / r): r和1/r分别代表gt/anchor和anchor/gt，也就是无论gt和anchor谁比较大
+                # 只要超过了阈值，就会被去掉
                 j = torch.max(r, 1 / r).max(2)[0] < self.hyp['anchor_t']  # compare
                 # j = wh_iou(anchors, t[:, 4:6]) > model.hyp['iou_t']  # iou(3,n)=wh_iou(anchors(3,2), gwh(n,2))
                 t = t[j]  # filter

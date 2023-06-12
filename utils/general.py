@@ -328,7 +328,15 @@ def git_describe(path=ROOT):  # path must be a directory
 @TryExcept()
 @WorkingDirectory(ROOT)
 def check_git_status(repo='ultralytics/yolov5', branch='master'):
-    # YOLOv5 status check, recommend 'git pull' if code is out of date
+    """
+    YOLOv5 status check, recommend 'git pull' if code is out of date
+    Args:
+        repo:
+        branch:
+
+    Returns:
+
+    """
     url = f'https://github.com/{repo}'
     msg = f', for updates see {url}'
     s = colorstr('github: ')  # string
