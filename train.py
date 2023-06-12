@@ -288,6 +288,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 f"Logging results to {colorstr('bold', save_dir)}\n"
                 f'Starting training for {epochs} epochs...')
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
+        print(f"RANK = {RANK}")
         callbacks.run('on_train_epoch_start')
         model.train()
 
@@ -310,6 +311,14 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             pbar = tqdm(pbar, total=nb, bar_format=TQDM_BAR_FORMAT)  # progress bar
         optimizer.zero_grad()
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
+            # type(imgs) = <class 'torch.Tensor'>, imgs.shape = torch.Size([1, 3, 640, 640])
+            # type(targets) = <class 'torch.Tensor'>, targets.shape = torch.Size([28, 6])
+            # targets = tensor([[0.00000e+00, 4.50000e+01, 1.77206e-01, 6.01019e-01, 3.54411e-01, 3.49188e-01],
+            #                   [0.00000e+00, 4.50000e+01, 1.88408e-01, 3.42084e-01, 3.76816e-01, 2.79361e-01],
+            #                   [0.00000e+00, 5.00000e+01, 1.48602e-01, 6.26917e-01, 2.97204e-01, 2.99395e-01],
+            #                   [0.00000e+00, 4.50000e+01, 6.83656e-02, 4.42770e-01, 1.36731e-01, 4.58255e-01],
+            #                   ...]
+            # type(paths) = <class 'list'>, paths = ['/home/songzq/Datasets/coco128_1/images/train2017/000000000009.jpg']
             callbacks.run('on_train_batch_start')
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device, non_blocking=True).float() / 255  # uint8 to float32, 0-255 to 0.0-1.0
@@ -335,6 +344,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
             # Forward
             with torch.cuda.amp.autocast(amp):
+                # pred = [pred[0], pred[1], pred[2]]
+                # pred[0].shape = torch.Size([1, 3, 80, 80, 85])
+                # pred[1].shape = torch.Size([1, 3, 40, 40, 85])
+                # pred[2].shape = torch.Size([1, 3, 20, 20, 85])
                 pred = model(imgs)  # forward
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:

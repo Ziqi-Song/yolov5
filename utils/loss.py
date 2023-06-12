@@ -114,7 +114,7 @@ class ComputeLoss:
         if g > 0:
             BCEcls, BCEobj = FocalLoss(BCEcls, g), FocalLoss(BCEobj, g)
 
-        m = de_parallel(model).model[-1]  # Detect() module
+        m = de_parallel(model).model[-1]  # Detect() module, type(m) = <class 'models.yolo.Detect'>
         self.balance = {3: [4.0, 1.0, 0.4]}.get(m.nl, [4.0, 1.0, 0.25, 0.06, 0.02])  # P3-P7
         self.ssi = list(m.stride).index(16) if autobalance else 0  # stride 16 index
         self.BCEcls, self.BCEobj, self.gr, self.hyp, self.autobalance = BCEcls, BCEobj, 1.0, h, autobalance
@@ -134,6 +134,8 @@ class ComputeLoss:
         Returns:
 
         """
+        # p.shape = [torch.Size([1, 3, 80, 80, 85]), torch.Size([1, 3, 40, 40, 85]), torch.Size([1, 3, 20, 20, 85])]
+        # type(targets) = <class 'torch.Tensor'>, targets.shape = torch.Size([28, 6])
         lcls = torch.zeros(1, device=self.device)  # class loss
         lbox = torch.zeros(1, device=self.device)  # box loss
         lobj = torch.zeros(1, device=self.device)  # object loss

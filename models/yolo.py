@@ -36,28 +36,39 @@ except ImportError:
 
 
 class Detect(nn.Module):
-    # YOLOv5 Detect head for detection models
+    """
+    YOLOv5 Detect head for detection models.
+    """
     stride = None  # strides computed during build
     dynamic = False  # force grid reconstruction
     export = False  # export mode
 
     def __init__(self, nc=80, anchors=(), ch=(), inplace=True):  # detection layer
         super().__init__()
+        # anchors = [[10, 13, 16, 30, 33, 23], [30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]]
+        # ch = [128, 256, 512]
         self.nc = nc  # number of classes
         self.no = nc + 5  # number of outputs per anchor
-        self.nl = len(anchors)  # number of detection layers
-        self.na = len(anchors[0]) // 2  # number of anchors
+        self.nl = len(anchors)  # number of detection layers, E.g. 3
+        self.na = len(anchors[0]) // 2  # number of anchors, E.g. 3
         self.grid = [torch.empty(0) for _ in range(self.nl)]  # init grid
+        # self.grid.shape = [torch.Size([0]), torch.Size([0]), torch.Size([0])]
         self.anchor_grid = [torch.empty(0) for _ in range(self.nl)]  # init anchor grid
-        self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(nl,na,2)
+        # self.anchor_grid.shape = [torch.Size([0]), torch.Size([0]), torch.Size([0])]
+        self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(num_heads,num_anchors,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
 
     def forward(self, x):
+        # x.shape = [torch.Size([1, 128, 32, 32]), torch.Size([1, 256, 16, 16]), torch.Size([1, 512, 8, 8])]
         z = []  # inference output
         for i in range(self.nl):
             x[i] = self.m[i](x[i])  # conv
-            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
+            # x[i].shape = [torch.Size([1, 255, 32, 32]), torch.Size([1, 255, 16, 16]), torch.Size([1, 255, 8, 8])]
+            bs, _, ny, nx = x[i].shape
+            # x(bs,num_outputs * num_anchors,ny,nx) ->
+            # x(bs,num_anchors,num_outputs,ny,nx) ->
+            # x(bs,num_anchors,ny,nx,num_outputs)
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
 
             if not self.training:  # inference
@@ -79,6 +90,17 @@ class Detect(nn.Module):
         return x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)
 
     def _make_grid(self, nx=20, ny=20, i=0, torch_1_10=check_version(torch.__version__, '1.10.0')):
+        """
+
+        Args:
+            nx:
+            ny:
+            i:
+            torch_1_10:
+
+        Returns:
+
+        """
         d = self.anchors[i].device
         t = self.anchors[i].dtype
         shape = 1, self.na, ny, nx, 2  # grid shape
@@ -204,6 +226,7 @@ class DetectionModel(BaseModel):
         LOGGER.info('')
 
     def forward(self, x, augment=False, profile=False, visualize=False):
+        # x.shape = torch.Size([1, 3, 640, 640])
         if augment:
             return self._forward_augment(x)  # augmented inference, None
         return self._forward_once(x, profile, visualize)  # single-scale inference, train
