@@ -196,15 +196,22 @@ class ComputeLoss:
         Build targets for compute_loss(), input targets(image,class,x,y,w,h)
         Args:
             p:
-            targets:
+            targets: targets.shape = [nt, 6]
 
         Returns:
 
         """
+        # na = 3, nt = 28
         na, nt = self.na, targets.shape[0]  # number of anchors, targets
         tcls, tbox, indices, anch = [], [], [], []
+        # gain,shape = [7]
         gain = torch.ones(7, device=self.device)  # normalized to gridspace gain
+        # ai用来标记下每个target属于哪个anchor，ai.shape = (na, nt), 第一行nt个0，第二行nt个1，...第na-1行nt个na-1 
         ai = torch.arange(na, device=self.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
+        # targets.repeat(na, 1, 1).shape = [na, nt, 6]
+        # ai[..., None].shape = [na, nt, 1]
+        # targets.shape = [na, nt, 7]
+        # 7: [img_idx, class_idx, x, y, w, h, anchor_idx]
         targets = torch.cat((targets.repeat(na, 1, 1), ai[..., None]), 2)  # append anchor indices
 
         g = 0.5  # bias
@@ -220,11 +227,15 @@ class ComputeLoss:
             device=self.device).float() * g  # offsets
 
         for i in range(self.nl):
+            # p[i].shape = [[1, 3, 80, 80, 85], [1, 3, 40, 40, 85], [1, 3, 20, 20, 85]]
+            # anchors[i].shape = [3, 2]
             anchors, shape = self.anchors[i], p[i].shape
+            # gain[2:6] save the scale of each feature map
+            # gain[2:6] = tensor([80., 80., 80., 80.]) / tensor([40., 40., 40., 40.]) / tensor([20., 20., 20., 20.])
             gain[2:6] = torch.tensor(shape)[[3, 2, 3, 2]]  # xyxy gain
 
             # Match targets to anchors
-            t = targets * gain  # shape(3,n,7)
+            t = targets * gain  # scale the xywh in targets from [0, 1] to the scale of each feature map
             if nt:
                 # Matches
                 r = t[..., 4:6] / anchors[:, None]  # wh ratio
