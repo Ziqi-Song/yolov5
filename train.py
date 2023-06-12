@@ -68,17 +68,40 @@ GIT_INFO = check_git_info()
 
 
 def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
-    save_dir, epochs, batch_size, weights, single_cls, evolve, data, cfg, resume, noval, nosave, workers, freeze = \
-        Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.evolve, opt.data, opt.cfg, \
-        opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze
+    """
+
+    Args:
+        hyp:
+        opt:
+        device:
+        callbacks:
+
+    Returns:
+
+    """
+    save_dir   = Path(opt.save_dir)
+    epochs     = opt.epochs
+    batch_size = opt.batch_size
+    weights    = opt.weights
+    single_cls = opt.single_cls
+    evolve     = opt.evolve
+    data       = opt.data
+    cfg        = opt.cfg
+    resume     = opt.resume
+    noval      = opt.noval
+    nosave     = opt.nosave
+    workers    = opt.workers
+    freeze     = opt.freeze
     callbacks.run('on_pretrain_routine_start')
 
     # Directories
+    # 创建save_dir/weights目录，并指定last路径为save_dir/weights/last.pt，best路径为save_dir/weights/best.pt
     w = save_dir / 'weights'  # weights dir
     (w.parent if evolve else w).mkdir(parents=True, exist_ok=True)  # make dir
     last, best = w / 'last.pt', w / 'best.pt'
 
     # Hyperparameters
+    # 读取yaml文件里的超参，保存在opt.hyp
     if isinstance(hyp, str):
         with open(hyp, errors='ignore') as f:
             hyp = yaml.safe_load(f)  # load hyps dict
@@ -86,6 +109,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     opt.hyp = hyp.copy()  # for saving hyps to checkpoints
 
     # Save run settings
+    # 如果不对超参进行进化搜索，则此时就可以保存超参了
     if not evolve:
         yaml_save(save_dir / 'hyp.yaml', hyp)
         yaml_save(save_dir / 'opt.yaml', vars(opt))
@@ -173,7 +197,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             best_fitness, start_epoch, epochs = smart_resume(ckpt, optimizer, ema, weights, epochs, resume)
         del ckpt, csd
 
-    # DP mode
+    # DataParallel mode
+    # 单机多卡
     if cuda and RANK == -1 and torch.cuda.device_count() > 1:
         LOGGER.warning(
             'WARNING ⚠️ DP not recommended, use torch.distributed.run for best DDP Multi-GPU results.\n'
@@ -229,7 +254,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
         callbacks.run('on_pretrain_routine_end', labels, names)
 
-    # DDP mode
+    # DistributedDataParallel mode
+    # 多机多卡
     if cuda and RANK != -1:
         model = smart_DDP(model)
 
@@ -502,8 +528,12 @@ def main(opt, callbacks=Callbacks()):
         if is_url(opt_data):
             opt.data = check_file(opt_data)  # avoid HUB resume auth timeout
     else:
-        opt.data, opt.cfg, opt.hyp, opt.weights, opt.project = \
-            check_file(opt.data), check_yaml(opt.cfg), check_yaml(opt.hyp), str(opt.weights), str(opt.project)  # checks
+        # checks
+        opt.data    = check_file(opt.data)
+        opt.cfg     = check_yaml(opt.cfg)
+        opt.hyp     = check_yaml(opt.hyp)
+        opt.weights = str(opt.weights)
+        opt.project = str(opt.project)
         assert len(opt.cfg) or len(opt.weights), 'either --cfg or --weights must be specified'
         if opt.evolve:
             if opt.project == str(ROOT / 'runs/train'):  # if default project name, rename to runs/evolve

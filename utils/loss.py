@@ -93,6 +93,12 @@ class ComputeLoss:
 
     # Compute losses
     def __init__(self, model, autobalance=False):
+        """
+
+        Args:
+            model:
+            autobalance:
+        """
         device = next(model.parameters()).device  # get model device
         h = model.hyp  # hyperparameters
 
@@ -119,6 +125,15 @@ class ComputeLoss:
         self.device = device
 
     def __call__(self, p, targets):  # predictions, targets
+        """
+
+        Args:
+            p:
+            targets:
+
+        Returns:
+
+        """
         lcls = torch.zeros(1, device=self.device)  # class loss
         lbox = torch.zeros(1, device=self.device)  # box loss
         lobj = torch.zeros(1, device=self.device)  # object loss
@@ -175,7 +190,15 @@ class ComputeLoss:
         return (lbox + lobj + lcls) * bs, torch.cat((lbox, lobj, lcls)).detach()
 
     def build_targets(self, p, targets):
-        # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
+        """
+        Build targets for compute_loss(), input targets(image,class,x,y,w,h)
+        Args:
+            p:
+            targets:
+
+        Returns:
+
+        """
         na, nt = self.na, targets.shape[0]  # number of anchors, targets
         tcls, tbox, indices, anch = [], [], [], []
         gain = torch.ones(7, device=self.device)  # normalized to gridspace gain
