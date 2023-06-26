@@ -221,6 +221,7 @@ class DetectionModel(BaseModel):
             print(f"m.stride = {m.stride}")
             # 每组anchor的尺寸（宽高）都除以该组对应的stride，例如分别除以8,16,32
             m.anchors /= m.stride.view(-1, 1, 1)
+            print(f"m.anchors = {m.anchors}")
             self.stride = m.stride
             self._initialize_biases()  # only run once
 
