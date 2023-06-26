@@ -807,7 +807,6 @@ class LoadImagesAndLabels(Dataset):
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         # ascontiguousarray将一个内存不连续存储的数组转换为内存连续存储的数组，使得运行速度更快
         img = np.ascontiguousarray(img)
-
         return torch.from_numpy(img), labels_out, self.im_files[index], shapes
 
     def load_image(self, i):
