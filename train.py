@@ -351,13 +351,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 # pred[2].shape = torch.Size([1, 3, 20, 20, 85])
                 pred = model(imgs)  # forward
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
-                pred_0 = torch.load("./pred_0.pt")
-                pred_1 = torch.load("./pred_1.pt")
-                pred_2 = torch.load("./pred_2.pt")
-                targets = torch.load("./targets.pt")
-                pred_fake = [pred_0, pred_1, pred_2]
-                loss_fake, loss_items_fake = compute_loss(pred_fake, targets.to(device))  # loss scaled by batch_size
-                print(f"\nloss = {loss_fake}")
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad:
