@@ -204,9 +204,10 @@ def run(
             im = im.half() if half else im.float()  # uint8 to fp16/32
             im /= 255  # 0 - 255 to 0.0 - 1.0
             nb, _, height, width = im.shape  # batch size, channels, height, width
-
+            print(f"\n\nnb = {nb}, height = {height}, width = {width}")
         # Inference
         with dt[1]:
+            print(f"compute_loss = {compute_loss}, augment = {augment}")
             preds, train_out = model(im) if compute_loss else (model(im, augment=augment), None)
 
         # Loss
@@ -214,6 +215,14 @@ def run(
             loss += compute_loss(train_out, targets)[1]  # box, obj, cls
 
         # NMS
+        print(f"len(targets = {len(targets)})")
+        for target_idx, t in enumerate(targets):
+            print(f"target[{target_idx}] = \n{targets[target_idx]}")
+        print(f"len(preds) = {len(preds)}")
+        for pred_idx, p in enumerate(preds):
+            for head_idx in range(len(p)):
+                print(f"preds[{pred_idx}][{head_idx}].shape = {preds[pred_idx][head_idx].shape}")
+        # targets = [img_idx, cls_idx, x, y, w, h]
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         with dt[2]:
