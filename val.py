@@ -222,10 +222,12 @@ def run(
         for pred_idx, p in enumerate(preds):
             for head_idx in range(len(p)):
                 print(f"preds[{pred_idx}][{head_idx}].shape = {preds[pred_idx][head_idx].shape}")
-        # targets = [img_idx, cls_idx, x, y, w, h]
+        # targets = [[img_idx, cls_idx, x, y, w, h], ...]
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         with dt[2]:
+            print(f"lb = {lb}")
+            print(f"agnostic = {single_cls}")
             preds = non_max_suppression(preds,
                                         conf_thres,
                                         iou_thres,

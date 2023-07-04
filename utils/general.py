@@ -881,14 +881,15 @@ def non_max_suppression(
     # Checks
     assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
     assert 0 <= iou_thres <= 1, f'Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0'
-    if isinstance(prediction, (list, tuple)):  # YOLOv5 model in validation model, output = (inference_out, loss_out)
-        prediction = prediction[0]  # select only inference output
     # len(prediction) = 2
     # prediction[0][0].shape = torch.Size([18522, 85])
     # prediction[0][1].shape = torch.Size([18522, 85])
     # prediction[1][0].shape = torch.Size([2, 3, 56, 84, 85])
     # prediction[1][1].shape = torch.Size([2, 3, 28, 42, 85])
     # prediction[1][2].shape = torch.Size([2, 3, 14, 21, 85])
+    if isinstance(prediction, (list, tuple)):  # YOLOv5 model in validation model, output = (inference_out, loss_out)
+        prediction = prediction[0]  # select only inference output
+    # prediction.shape = torch.Size([2, 18522, 85])
 
     device = prediction.device
     mps = 'mps' in device.type  # Apple MPS
@@ -897,6 +898,7 @@ def non_max_suppression(
     bs = prediction.shape[0]  # batch size
     nc = prediction.shape[2] - nm - 5  # number of classes
     xc = prediction[..., 4] > conf_thres  # candidates
+    # xc.shape = torch.Size([2, 18522])
 
     # Settings
     # min_wh = 2  # (pixels) minimum box width and height
@@ -909,10 +911,14 @@ def non_max_suppression(
 
     t = time.time()
     mi = 5 + nc  # mask start index
+    # nm = 0, bs = 2, output = [tensor([], size=(0, 6)), tensor([], size=(0, 6))]
     output = [torch.zeros((0, 6 + nm), device=prediction.device)] * bs
+    print(f"output = {output}")
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
+        # 筛选出conf > conf_thres的预测结果
+        # x.shape = torch.Size([18522, 85]) -> x.shape = torch.Size([221, 85])
         x = x[xc[xi]]  # confidence
 
         # Cat apriori labels if autolabelling
@@ -929,15 +935,27 @@ def non_max_suppression(
             continue
 
         # Compute conf
+        # x[: :4] = xywh
+        # x[:, 4:5] = obj_conf
+        # x[:, 5:] = cls_conf
         x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
 
         # Box/Mask
+        # box.shape = torch.Size([221, 4])
         box = xywh2xyxy(x[:, :4])  # center_x, center_y, width, height) to (x1, y1, x2, y2)
         mask = x[:, mi:]  # zero columns if no masks
 
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_label:
             i, j = (x[:, 5:mi] > conf_thres).nonzero(as_tuple=False).T
+            # i, j表示：第i个box的类别预测结果中，第j类的conf大于conf_thres（注意，可能有不止一个类别的conf大于conf_thres）
+            # i.shape = torch.Size([285])
+            # j.shape = torch.Size([285])
+            # box[i].shape = torch.Size([285, 4])
+            # x[i, 5 + j, None].shape = torch.Size([285, 1]) -> cls_conf
+            # j[:, None].shape = torch.Size([285, 1]) -> cls_idx
+            # x.shape = torch.Size([285, 6])
+            # 此时x的格式为[x, y, x, y, cls_conf, cls_idx]
             x = torch.cat((box[i], x[i, 5 + j, None], j[:, None].float(), mask[i]), 1)
         else:  # best class only
             conf, j = x[:, 5:mi].max(1, keepdim=True)
@@ -955,11 +973,14 @@ def non_max_suppression(
         n = x.shape[0]  # number of boxes
         if not n:  # no boxes
             continue
-        x = x[x[:, 4].argsort(descending=True)[:max_nms]]  # sort by confidence and remove excess boxes
+
+        # sort by confidence and remove excess boxes
+        x = x[x[:, 4].argsort(descending=True)[:max_nms]]
 
         # Batched NMS
         c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
         boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
+        # i保存的是x中被nms筛选出的box的idx
         i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
         i = i[:max_det]  # limit detections
         if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
