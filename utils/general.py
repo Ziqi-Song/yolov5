@@ -913,7 +913,6 @@ def non_max_suppression(
     mi = 5 + nc  # mask start index
     # nm = 0, bs = 2, output = [tensor([], size=(0, 6)), tensor([], size=(0, 6))]
     output = [torch.zeros((0, 6 + nm), device=prediction.device)] * bs
-    print(f"output = {output}")
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height

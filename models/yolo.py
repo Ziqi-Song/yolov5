@@ -51,28 +51,42 @@ class Detect(nn.Module):
         self.no = nc + 5  # number of outputs per anchor
         self.nl = len(anchors)  # number of detection layers, E.g. 3
         self.na = len(anchors[0]) // 2  # number of anchors, E.g. 3
-        self.grid = [torch.empty(0) for _ in range(self.nl)]  # init grid
         # self.grid.shape = [torch.Size([0]), torch.Size([0]), torch.Size([0])]
-        self.anchor_grid = [torch.empty(0) for _ in range(self.nl)]  # init anchor grid
+        self.grid = [torch.empty(0) for _ in range(self.nl)]  # init grid
         # self.anchor_grid.shape = [torch.Size([0]), torch.Size([0]), torch.Size([0])]
+        self.anchor_grid = [torch.empty(0) for _ in range(self.nl)]  # init anchor grid
         self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(num_heads,num_anchors,2)
         self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
         self.inplace = inplace  # use inplace ops (e.g. slice assignment)
 
     def forward(self, x):
-        # x.shape = [torch.Size([1, 128, 32, 32]), torch.Size([1, 256, 16, 16]), torch.Size([1, 512, 8, 8])]
+        """
+
+        Args:
+            x: x是backbone的输出，即conv层的输出
+            x.shape = [torch.Size([1, 128, 32, 32]), torch.Size([1, 256, 16, 16]), torch.Size([1, 512, 8, 8])]
+
+        Returns:
+
+        """
         z = []  # inference output
+
+        # 遍历每个检测头
         for i in range(self.nl):
-            x[i] = self.m[i](x[i])  # conv
+            # conv
             # x[i].shape = [torch.Size([1, 255, 32, 32]), torch.Size([1, 255, 16, 16]), torch.Size([1, 255, 8, 8])]
+            x[i] = self.m[i](x[i])
             bs, _, ny, nx = x[i].shape
             # x(bs,num_outputs * num_anchors,ny,nx) ->
             # x(bs,num_anchors,num_outputs,ny,nx) ->
             # x(bs,num_anchors,ny,nx,num_outputs)
             x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
 
-            if not self.training:  # inference
+            # inference
+            if not self.training:
                 if self.dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
+                    # self.grid[i].shape = torch.Size([1, self.na, ny, nx, 2])
+                    # self.anchor_grid[i].shape = torch.Size([1, self.na, ny, nx, 2])
                     self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
 
                 if isinstance(self, Segment):  # (boxes + masks)
@@ -82,11 +96,14 @@ class Detect(nn.Module):
                     y = torch.cat((xy, wh, conf.sigmoid(), mask), 4)
                 else:  # Detect (boxes only)
                     xy, wh, conf = x[i].sigmoid().split((2, 2, self.nc + 1), 4)
-                    xy = (xy * 2 + self.grid[i]) * self.stride[i]  # xy
-                    wh = (wh * 2) ** 2 * self.anchor_grid[i]  # wh
+                    # xy.shape = wh.shape = (bs, self.na, ny, nx, 2)
+                    # conf.shape = (bs, self.na, ny, nx, self.no - 4)
+                    xy = (xy * 2 + self.grid[i]) * self.stride[i]  # xy, img尺度
+                    wh = (wh * 2) ** 2 * self.anchor_grid[i]  # wh, img尺度
+                    # y.shape = (bs, self.na, ny, nx, self.no)
                     y = torch.cat((xy, wh, conf), 4)
                 z.append(y.view(bs, self.na * nx * ny, self.no))
-
+        # E.g. z = [[2, 1000, 85], [2, 500, 85], [2, 200, 85]], torch.cat(z, 1) = [2, 1000+500+200, 85]
         return x if self.training else (torch.cat(z, 1),) if self.export else (torch.cat(z, 1), x)
 
     def _make_grid(self, nx=20, ny=20, i=0, torch_1_10=check_version(torch.__version__, '1.10.0')):
@@ -103,10 +120,18 @@ class Detect(nn.Module):
         """
         d = self.anchors[i].device
         t = self.anchors[i].dtype
+        # shape = (1, self.na, ny, nx, 2)
         shape = 1, self.na, ny, nx, 2  # grid shape
         y, x = torch.arange(ny, device=d, dtype=t), torch.arange(nx, device=d, dtype=t)
+        # yv.shape = xv.shape = torch.Size([ny, nx])
+        # 对于一个ny行nx列的网格，yv保存的是每个网格点的行坐标，xv保存的是每个网格点的列坐标
         yv, xv = torch.meshgrid(y, x, indexing='ij') if torch_1_10 else torch.meshgrid(y, x)  # torch>=0.7 compatibility
+        # torch.stack((xv, yv), 2).shape = torch.Size([ny, nx, 2])
+        # grid.shape = torch.Size([1, self.na, ny, nx, 2])
+        # grid保存的是na个shape为[ny, nx, 2]的矩阵，每个矩阵的元素
         grid = torch.stack((xv, yv), 2).expand(shape) - 0.5  # add grid offset, i.e. y = 2.0 * x - 0.5
+        # anchor_grid.shape = torch.Size([1, self.na, ny, nx, 2])
+        # 先将anchor坐标由(0, 1)转换到对应区间，然后通过expand将anchor的wh放置在[ny, nx]个网格点上
         anchor_grid = (self.anchors[i] * self.stride[i]).view((1, self.na, 1, 1, 2)).expand(shape)
         return grid, anchor_grid
 
