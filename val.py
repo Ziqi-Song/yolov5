@@ -215,13 +215,13 @@ def run(
             loss += compute_loss(train_out, targets)[1]  # box, obj, cls
 
         # NMS
-        print(f"len(targets = {len(targets)})")
-        for target_idx, t in enumerate(targets):
-            print(f"target[{target_idx}] = \n{targets[target_idx]}")
-        print(f"len(preds) = {len(preds)}")
-        for pred_idx, p in enumerate(preds):
-            for head_idx in range(len(p)):
-                print(f"preds[{pred_idx}][{head_idx}].shape = {preds[pred_idx][head_idx].shape}")
+        # print(f"len(targets = {len(targets)})")
+        # for target_idx, t in enumerate(targets):
+        #     print(f"target[{target_idx}] = \n{targets[target_idx]}")
+        # print(f"len(preds) = {len(preds)}")
+        # for pred_idx, p in enumerate(preds):
+        #     for head_idx in range(len(p)):
+        #         print(f"preds[{pred_idx}][{head_idx}].shape = {preds[pred_idx][head_idx].shape}")
         # targets = [[img_idx, cls_idx, x, y, w, h], ...]
         targets[:, 2:] *= torch.tensor((width, height, width, height), device=device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
