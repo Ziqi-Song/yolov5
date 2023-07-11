@@ -345,12 +345,22 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
             # Forward
             with torch.cuda.amp.autocast(amp):
+                # Normal Forward
                 # pred = [pred[0], pred[1], pred[2]]
                 # pred[0].shape = torch.Size([1, 3, 80, 80, 85])
                 # pred[1].shape = torch.Size([1, 3, 40, 40, 85])
                 # pred[2].shape = torch.Size([1, 3, 20, 20, 85])
-                pred = model(imgs)  # forward
+                pred = model(imgs)
+
+                # Loss Computation Test
+                # pred_0 = torch.load("./pred_0.pt")
+                # pred_1 = torch.load("./pred_1.pt")
+                # pred_2 = torch.load("./pred_2.pt")
+                # targets = torch.load("./targets.pt")
+                # pred = [pred_0, pred_1, pred_2]
+
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
+
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad:

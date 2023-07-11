@@ -143,6 +143,7 @@ class ComputeLoss:
 
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
+            print(f"i = {i}")
             b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
             tobj = torch.zeros(pi.shape[:4], dtype=pi.dtype, device=self.device)  # target obj
 
@@ -193,6 +194,7 @@ class ComputeLoss:
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
         bs = tobj.shape[0]  # batch size
+        # print(f"\n\nhyp['box'] = {self.hyp['box']}, hyp['obj'] = {self.hyp['obj']}, hyp['cls'] = {self.hyp['cls']}, bs = {bs}")
 
         return (lbox + lobj + lcls) * bs, torch.cat((lbox, lobj, lcls)).detach()
 
