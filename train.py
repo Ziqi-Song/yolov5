@@ -350,7 +350,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 # pred[0].shape = torch.Size([1, 3, 80, 80, 85])
                 # pred[1].shape = torch.Size([1, 3, 40, 40, 85])
                 # pred[2].shape = torch.Size([1, 3, 20, 20, 85])
+                # torch.save(imgs, "./in_tensor.pt")
                 pred = model(imgs)
+                # torch.save(pred, "./output.pt")
 
                 # Loss Computation Test
                 # pred_0 = torch.load("./pred_0.pt")
