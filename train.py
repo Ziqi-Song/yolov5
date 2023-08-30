@@ -61,9 +61,9 @@ from utils.plots import plot_evolve
 from utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, select_device, smart_DDP, smart_optimizer,
                                smart_resume, torch_distributed_zero_first)
 
-LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
-RANK = int(os.getenv('RANK', -1))
-WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
+LOCAL_RANK = int(os.getenv('LOCAL_RANK', default=-1))  # https://pytorch.org/docs/stable/elastic/run.html
+RANK = int(os.getenv('RANK', default=-1))
+WORLD_SIZE = int(os.getenv('WORLD_SIZE', default=1))
 GIT_INFO = check_git_info()
 
 
@@ -154,7 +154,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info(f'Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
     else:
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-    amp = check_amp(model)  # check AMP
+    amp = check_amp(model)  # check PyTorch Automatic Mixed Precision (AMP)
 
     # Freeze
     freeze = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # layers to freeze
@@ -169,7 +169,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
     imgsz = check_img_size(opt.imgsz, gs, floor=gs * 2)  # verify imgsz is gs-multiple
 
-    # Batch size
+    # Auto Calculate Batch size
     if RANK == -1 and batch_size == -1:  # single-GPU only, estimate best batch size
         batch_size = check_train_batch_size(model, imgsz, amp)
         loggers.on_params_update({'batch_size': batch_size})
@@ -187,10 +187,10 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         lf = lambda x: (1 - x / epochs) * (1.0 - hyp['lrf']) + hyp['lrf']  # linear
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)  # plot_lr_scheduler(optimizer, scheduler, epochs)
 
-    # EMA
+    # Exponential Moving Average (EMA)
     ema = ModelEMA(model) if RANK in {-1, 0} else None
 
-    # Resume
+    # Resume 从断点恢复训练
     best_fitness, start_epoch = 0.0, 0
     if pretrained:
         if resume:
@@ -212,11 +212,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         LOGGER.info('Using SyncBatchNorm()')
 
     # Trainloader
-    train_loader, dataset = create_dataloader(train_path,
-                                              imgsz,
-                                              batch_size // WORLD_SIZE,
-                                              gs,
-                                              single_cls,
+    train_loader, dataset = create_dataloader(path=train_path,
+                                              imgsz=imgsz,
+                                              batch_size=batch_size // WORLD_SIZE,
+                                              stride=gs,
+                                              single_cls=single_cls,
                                               hyp=hyp,
                                               augment=False,
                                               cache=None if opt.cache == 'val' else opt.cache,
@@ -234,11 +234,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
     # Process 0
     if RANK in {-1, 0}:
-        val_loader = create_dataloader(val_path,
-                                       imgsz,
-                                       batch_size // WORLD_SIZE * 2,
-                                       gs,
-                                       single_cls,
+        val_loader = create_dataloader(path=val_path,
+                                       imgsz=imgsz,
+                                       batch_size=batch_size // WORLD_SIZE * 2,
+                                       stride=gs,
+                                       single_cls=single_cls,
                                        hyp=hyp,
                                        cache=None if noval else opt.cache,
                                        rect=True,
@@ -534,6 +534,7 @@ def parse_opt(known=False):
 
 def main(opt, callbacks=Callbacks()):
     # Checks
+    # 检查git是否有更新，检查requirements是否满足
     if RANK in {-1, 0}:
         print_args(vars(opt))
         check_git_status()
@@ -578,6 +579,7 @@ def main(opt, callbacks=Callbacks()):
         assert opt.batch_size != -1, f'AutoBatch with --batch-size -1 {msg}, please pass a valid --batch-size'
         assert opt.batch_size % WORLD_SIZE == 0, f'--batch-size {opt.batch_size} must be multiple of WORLD_SIZE'
         assert torch.cuda.device_count() > LOCAL_RANK, 'insufficient CUDA devices for DDP command'
+        # Sets the current device. It’s better to use CUDA_VISIBLE_DEVICES environmental variable.
         torch.cuda.set_device(LOCAL_RANK)
         device = torch.device('cuda', LOCAL_RANK)
         dist.init_process_group(backend='nccl' if dist.is_nccl_available() else 'gloo')

@@ -58,7 +58,14 @@ def get_hash(paths):
 
 
 def exif_size(img):
-    # Returns exif-corrected PIL size
+    """
+    Returns exif-corrected PIL size
+    Args:
+        img: PIL Image
+
+    Returns:
+
+    """
     s = img.size  # (width, height)
     with contextlib.suppress(Exception):
         rotation = dict(img._getexif().items())[orientation]
@@ -141,7 +148,8 @@ def create_dataloader(path,
     Returns:
 
     """
-    # 使用rect推理时，自动设置shuffle为False
+    # rect与shuffle不能同时使用
+    # 当rect为True时，自动设置shuffle为False
     if rect and shuffle:
         LOGGER.warning('WARNING ⚠️ --rect is incompatible with DataLoader shuffle, setting shuffle=False')
         shuffle = False
@@ -162,9 +170,10 @@ def create_dataloader(path,
 
     # 保证batch_size不超过dataset规模
     batch_size = min(batch_size, len(dataset))
-    num_devices = torch.cuda.device_count()  # number of CUDA devices
-    num_workers = min([os.cpu_count() // max(num_devices, 1), batch_size if batch_size > 1 else 0, workers])  # number
-    # of workers
+    # number of CUDA devices
+    num_devices = torch.cuda.device_count()
+    # number of workers
+    num_workers = min([os.cpu_count() // max(num_devices, 1), batch_size if batch_size > 1 else 0, workers])
     sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
     loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
     generator = torch.Generator()
@@ -495,7 +504,7 @@ class LoadImagesAndLabels(Dataset):
             batch_size: int
             augment: True / False
             hyp:
-            rect:
+            rect: True / False
             image_weights:
             cache_images:
             single_cls:
@@ -509,14 +518,14 @@ class LoadImagesAndLabels(Dataset):
         self.hyp = hyp
         self.image_weights = image_weights
         self.rect = False if image_weights else rect
-        self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
+        self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only in training)
         self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
         self.path = path
         self.albumentations = Albumentations(size=img_size) if augment else None
 
         """------------ 加载image path和label path ------------"""
-        # Load image pathes into self.im_files
+        # Load image paths into self.im_files
         try:
             f = []  # image files
             for p in path if isinstance(path, list) else [path]:
@@ -533,24 +542,38 @@ class LoadImagesAndLabels(Dataset):
                 else:
                     raise FileNotFoundError(f'{prefix}{p} does not exist')
             # self.im_files is a list containing the full path of every image.
-            # E.g. ['/Users/songziqi/Documents/Datasets/coco/val2017/000000000139.jpg',
-            #       '/Users/songziqi/Documents/Datasets/coco/val2017/000000000285.jpg',
-            #       ]
+            # E.g. [
+            #          '/Users/songziqi/Documents/Datasets/coco/val2017/000000000139.jpg',
+            #          '/Users/songziqi/Documents/Datasets/coco/val2017/000000000285.jpg',
+            #          ...
+            #      ]
             self.im_files = sorted(x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in IMG_FORMATS)
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in IMG_FORMATS])  # pathlib
             assert self.im_files, f'{prefix}No images found'
         except Exception as e:
             raise Exception(f'{prefix}Error loading data from {path}: {e}\n{HELP_URL}') from e
 
-        # Load annotation pathes into self.label_files
+        # Load annotation paths into self.label_files
         # self.label_files is a list containing the full path of every annotation file.
-        # E.g. ['/Users/songziqi/Documents/Datasets/coco/val2017/000000000139.txt',
-        #       '/Users/songziqi/Documents/Datasets/coco/val2017/000000000285.txt',
-        #       ]
+        # E.g. [
+        #          '/Users/songziqi/Documents/Datasets/coco/val2017/000000000139.txt',
+        #          '/Users/songziqi/Documents/Datasets/coco/val2017/000000000285.txt',
+        #          ...
+        #      ]
         self.label_files = img2label_paths(self.im_files)
 
-        """------------ Cache相关配置，使用Cache是为了提高图像加载效率 ------------"""
+        """------------ Cache相关配置，使用Cache是为了提高图像label加载效率 ------------"""
         # Check cache
+        # {
+        #     'hash':
+        #     'results': nf, nm, ne, nc, len(self.im_files)
+        #     'msgs':
+        #     'version':
+        #     'image_path1': [label, shape, segments],
+        #     'image_path2': [label, shape, segments],
+        #     'image_path3': [label, shape, segments],
+        #     ...
+        # }
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')
         try:
             cache, exists = np.load(cache_path, allow_pickle=True).item(), True  # load dict
@@ -574,13 +597,14 @@ class LoadImagesAndLabels(Dataset):
         nl = len(np.concatenate(labels, 0))  # number of labels
         assert nl > 0 or not augment, f'{prefix}All labels empty in {cache_path}, can not start training. {HELP_URL}'
         self.labels = list(labels)
-        # self.labels = [[[class_idx, x, y, w, h],[class_idx, x, y, w, h],...,[class_idx, x, y, w, h]],
-        #                [[class_idx, x, y, w, h],[class_idx, x, y, w, h],...,[class_idx, x, y, w, h]],
-        #                ...
-        #                ]
+        # self.labels = [
+        #                   [[class_idx, x, y, w, h],[class_idx, x, y, w, h],...,[class_idx, x, y, w, h]],
+        #                   [[class_idx, x, y, w, h],[class_idx, x, y, w, h],...,[class_idx, x, y, w, h]],
+        #                   ...
+        #               ]
         self.shapes = np.array(shapes)
-        self.im_files = list(cache.keys())  # update
-        self.label_files = img2label_paths(cache.keys())  # update
+        self.im_files = list(cache.keys())  # update, 全部image路径
+        self.label_files = img2label_paths(cache.keys())  # update, 全部label路径
 
         # Filter images
         # 筛选出至少包含min_items个object的图像
@@ -598,9 +622,10 @@ class LoadImagesAndLabels(Dataset):
         # bi = [0,0,...0,
         #       1,1,...1,
         #       ...
-        #       batch_size-1, batch_size-1,... batch_size]
-        # There are n elements in bi, each element indicates the batch index each image belongs to
-        # As a result, there are batch_size 0, batch_size 1, batch_size 2 ... in bi
+        #       batch_size-1, batch_size-1,... batch_size-1]
+        # There are n elements in bi, each element indicates the batch index of each image.
+        # As a result, there are batch_idx 0, batch_idx 1, batch_idx 2 ... in bi.
+        # bi表示每个image属于哪个batch，例如bi为0的image都属于第0个batch，以此类推
         bi = np.floor(np.arange(n) / batch_size).astype(int)  # batch index
         nb = bi[-1] + 1  # number of batches
         self.batch = bi  # batch index of image
@@ -612,20 +637,32 @@ class LoadImagesAndLabels(Dataset):
         self.segments = list(self.segments)
         include_class_array = np.array(include_class).reshape(1, -1)
         for i, (label, segment) in enumerate(zip(self.labels, self.segments)):
+            # 一个label包含了一幅图像中所有object
+            # label = [
+            #             [class_idx, x, y, w, h],
+            #             [class_idx, x, y, w, h],
+            #             ...,
+            #             [class_idx, x, y, w, h]
+            #         ]
             if include_class:
-                # 筛选出包含include_class指定class的label，也就是图像（label[i]对应一幅图，不是一个object）
+                # 这里筛选出属于include_class的object，这些object的index保存在j
                 j = (label[:, 0:1] == include_class_array).any(1)
+                # 将self.labels更新为筛选出的object
                 self.labels[i] = label[j]
                 if segment:
                     self.segments[i] = [segment[idx] for idx, elem in enumerate(j) if elem]
-            if single_cls:  # single-class training, merge all classes into 0
+            # single-class training, merge all classes into 0
+            # 单一类别训练：所有class都认为是同一类，class_idx = 0
+            if single_cls:
                 self.labels[i][:, 0] = 0
 
         # Rectangular Training
+        # 计算每个batch的shape，使其为stride的整数倍
         if self.rect:
             # Sort by aspect ratio
             s = self.shapes  # wh
             ar = s[:, 1] / s[:, 0]  # aspect ratio
+            # 按aspect ratio从小到大排序，排序后的元素索引为irect
             irect = ar.argsort()
             self.im_files = [self.im_files[i] for i in irect]
             self.label_files = [self.label_files[i] for i in irect]
@@ -637,6 +674,7 @@ class LoadImagesAndLabels(Dataset):
             # Set training image shapes
             shapes = [[1, 1]] * nb
             for i in range(nb):
+                # 取出同一个batch的image的aspect ratio
                 ari = ar[bi == i]
                 mini, maxi = ari.min(), ari.max()
                 if maxi < 1:
@@ -667,7 +705,15 @@ class LoadImagesAndLabels(Dataset):
             pbar.close()
 
     def check_cache_ram(self, safety_margin=0.1, prefix=''):
-        # Check image caching requirements vs available memory
+        """
+        Check image caching requirements vs available memory
+        Args:
+            safety_margin:
+            prefix:
+
+        Returns:
+
+        """
         b, gb = 0, 1 << 30  # bytes of cached images, bytes per gigabytes
         n = min(self.n, 30)  # extrapolate from 30 random images
         for _ in range(n):
@@ -684,10 +730,28 @@ class LoadImagesAndLabels(Dataset):
         return cache
 
     def cache_labels(self, path=Path('./labels.cache'), prefix=''):
-        # Cache dataset labels, check images and read shapes
+        """
+        Cache dataset labels, check images and read shapes, save cache files
+        Args:
+            path:
+            prefix:
+
+        Returns:
+            {
+                'hash':
+                'results': nf, nm, ne, nc, len(self.im_files)
+                'msgs':
+                'version':
+                'image_path1': [label, shape, segments],
+                'image_path2': [label, shape, segments],
+                'image_path3': [label, shape, segments],
+                ...
+            }
+        """
         x = {}  # dict
         nm, nf, ne, nc, msgs = 0, 0, 0, 0, []  # number missing, found, empty, corrupt, messages
         desc = f'{prefix}Scanning {path.parent / path.stem}...'
+        # 使用多线程执行verify_image_label方法，验证图像与标注的正确性
         with Pool(NUM_THREADS) as pool:
             pbar = tqdm(pool.imap(verify_image_label, zip(self.im_files, self.label_files, repeat(prefix))),
                         desc=desc,
@@ -705,10 +769,12 @@ class LoadImagesAndLabels(Dataset):
                 pbar.desc = f'{desc} {nf} images, {nm + ne} backgrounds, {nc} corrupt'
 
         pbar.close()
+        # Log
         if msgs:
             LOGGER.info('\n'.join(msgs))
         if nf == 0:
             LOGGER.warning(f'{prefix}WARNING ⚠️ No labels found in {path}. {HELP_URL}')
+
         x['hash'] = get_hash(self.label_files + self.im_files)
         x['results'] = nf, nm, ne, nc, len(self.im_files)
         x['msgs'] = msgs  # warnings
@@ -731,6 +797,14 @@ class LoadImagesAndLabels(Dataset):
     #     return self
 
     def __getitem__(self, index):
+        """
+
+        Args:
+            index:
+
+        Returns:
+
+        """
         index = self.indices[index]  # linear, shuffled, or image_weights
 
         hyp = self.hyp
@@ -743,7 +817,6 @@ class LoadImagesAndLabels(Dataset):
             # MixUp augmentation
             if random.random() < hyp['mixup']:
                 img, labels = mixup(img, labels, *self.load_mosaic(random.randint(0, self.n - 1)))
-
         else:
             # Load image
             # 读取img并通过resize使其一条边的长度等于self.img_size
@@ -810,7 +883,14 @@ class LoadImagesAndLabels(Dataset):
         return torch.from_numpy(img), labels_out, self.im_files[index], shapes
 
     def load_image(self, i):
-        # Loads 1 image from dataset index 'i', returns (im, original hw, resized hw)
+        """
+        Loads 1 image from dataset index 'i', returns (im, original hw, resized hw)
+        Args:
+            i:
+
+        Returns:
+            (im, original hw, resized hw)
+        """
         im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i],
         if im is None:  # not cached in RAM
             if fn.exists():  # load npy
@@ -1073,7 +1153,14 @@ def autosplit(path=DATASETS_DIR / 'coco128/images', weights=(0.9, 0.1, 0.0), ann
 
 
 def verify_image_label(args):
-    # Verify one image-label pair
+    """
+    Verify one image-label pair
+    Args:
+        args: (im_file, lb_file, prefix)
+
+    Returns:
+        im_file, lb, shape, segments, nm, nf, ne, nc, msg
+    """
     im_file, lb_file, prefix = args
     nm, nf, ne, nc, msg, segments = 0, 0, 0, 0, '', []  # number (missing, found, empty, corrupt), message, segments
     try:
@@ -1081,8 +1168,9 @@ def verify_image_label(args):
         im = Image.open(im_file)
         im.verify()  # PIL verify
         shape = exif_size(im)  # image size
-        assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
+        assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} < 10 pixels'
         assert im.format.lower() in IMG_FORMATS, f'invalid image format {im.format}'
+        # 检查jpg图像是否损坏，若损坏则尝试修复
         if im.format.lower() in ('jpg', 'jpeg'):
             with open(im_file, 'rb') as f:
                 f.seek(-2, 2)
