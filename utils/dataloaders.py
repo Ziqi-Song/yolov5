@@ -505,7 +505,7 @@ class LoadImagesAndLabels(Dataset):
             augment: True / False
             hyp:
             rect: True / False
-            image_weights:
+            image_weights: True / False
             cache_images:
             single_cls:
             stride:
@@ -660,15 +660,15 @@ class LoadImagesAndLabels(Dataset):
         # 计算每个batch的shape，使其为stride的整数倍
         if self.rect:
             # Sort by aspect ratio
-            s = self.shapes  # wh
-            ar = s[:, 1] / s[:, 0]  # aspect ratio
+            s = self.shapes  # [w, h]
+            ar = s[:, 1] / s[:, 0]  # aspect ratio = h / w
             # 按aspect ratio从小到大排序，排序后的元素索引为irect
             irect = ar.argsort()
             self.im_files = [self.im_files[i] for i in irect]
             self.label_files = [self.label_files[i] for i in irect]
             self.labels = [self.labels[i] for i in irect]
             self.segments = [self.segments[i] for i in irect]
-            self.shapes = s[irect]  # wh
+            self.shapes = s[irect]  # [w, h]
             ar = ar[irect]
 
             # Set training image shapes
@@ -677,11 +677,13 @@ class LoadImagesAndLabels(Dataset):
                 # 取出同一个batch的image的aspect ratio
                 ari = ar[bi == i]
                 mini, maxi = ari.min(), ari.max()
+                # 注意：以下的shapes是[h, w]
                 if maxi < 1:
                     shapes[i] = [maxi, 1]
                 elif mini > 1:
                     shapes[i] = [1, 1 / mini]
 
+            # 注意：self.batch_shapes是[h, w]，与self.shapes相反
             self.batch_shapes = np.ceil(np.array(shapes) * img_size / stride + pad).astype(int) * stride
 
         # Cache images into RAM/disk for faster training
@@ -1049,7 +1051,59 @@ class LoadImagesAndLabels(Dataset):
 
     @staticmethod
     def collate_fn(batch):
+        """
+        注意，输入是一个batch的数据[data[0], data[1], ..., data[batchsize-1]]
+        Args:
+            batch:
+
+        Returns:
+
+        """
         im, label, path, shapes = zip(*batch)  # transposed
+        # len(label) = batchsize
+        # E.g. batchsize = 4时，label的格式如下：
+        # label = (
+        #             tensor([
+        #                        [0, class_idx, x, y, w, h]  第一幅img，有1个object
+        #                    ]),
+        #             tensor([
+        #                        [0, class_idx, x, y, w, h], 第二幅img，有3个object
+        #                        [0, class_idx, x, y, w, h],
+        #                        [0, class_idx, x, y, w, h]
+        #                    ]),
+        #             tensor([
+        #                        [0, class_idx, x, y, w, h], 第三幅img，有2个object
+        #                        [0, class_idx, x, y, w, h],
+        #                    ]),
+        #             tensor([
+        #                        [0, class_idx, x, y, w, h], 第四幅img，有4个object
+        #                        [0, class_idx, x, y, w, h],
+        #                        [0, class_idx, x, y, w, h],
+        #                        [0, class_idx, x, y, w, h]
+        #                    ]),
+        #         )
+        # 经过以下处理，为每个object都标注上其属于这个batch中的第几幅图像：
+        # label = (
+        #             tensor([
+        #                        [0, class_idx, x, y, w, h]  第一幅img，有1个object
+        #                    ]),
+        #             tensor([
+        #                        [1, class_idx, x, y, w, h], 第二幅img，有3个object
+        #                        [1, class_idx, x, y, w, h],
+        #                        [1, class_idx, x, y, w, h]
+        #                    ]),
+        #             tensor([
+        #                        [2, class_idx, x, y, w, h], 第三幅img，有2个object
+        #                        [2, class_idx, x, y, w, h],
+        #                    ]),
+        #             tensor([
+        #                        [3, class_idx, x, y, w, h], 第四幅img，有4个object
+        #                        [3, class_idx, x, y, w, h],
+        #                        [3, class_idx, x, y, w, h],
+        #                        [3, class_idx, x, y, w, h]
+        #                    ]),
+        #         )
+
         for i, lb in enumerate(label):
             lb[:, 0] = i  # add target image index for build_targets()
         return torch.stack(im, 0), torch.cat(label, 0), path, shapes
